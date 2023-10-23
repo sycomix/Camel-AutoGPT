@@ -36,29 +36,29 @@ rp = Blueprint('rp', __name__)
 def rp_isLoggedIn():
     url_host = urllib.parse.urlsplit(request.url).hostname
     if "5000" in request.url:
-        redirect_uri = "http://"+url_host+":5000/rp/google_callback"
-    else:    
-        redirect_uri = "https://"+url_host+"/rp/google_callback"
+        redirect_uri = f"http://{url_host}:5000/rp/google_callback"
+    else:
+        redirect_uri = f"https://{url_host}/rp/google_callback"
     google = OAuth2Session(
         google_client_id, scope=scope, redirect_uri=redirect_uri)
     login_url, state = google.authorization_url(authorization_base_url)
     session['oauth_state'] = google_client_id
-    if current_user.is_authenticated:
-        if current_user.openai_key == "" or current_user.openai_key == None:
-            keyAdded = None
-        else:
-            keyAdded = current_user.openai_key
-        return jsonify(isLoggedIn=current_user.is_authenticated,userId=current_user.id,key_added=keyAdded,image=current_user.profile_image)
-    else:
+    if not current_user.is_authenticated:
         return jsonify(isLoggedIn=False,auth_url=login_url)
+    keyAdded = (
+        None
+        if current_user.openai_key == "" or current_user.openai_key is None
+        else current_user.openai_key
+    )
+    return jsonify(isLoggedIn=current_user.is_authenticated,userId=current_user.id,key_added=keyAdded,image=current_user.profile_image)
 
 @rp.route("/rp/google_callback", methods=['GET'])
 def rp_google_callback():
     url_host = urllib.parse.urlsplit(request.url).hostname
     if "5000" in request.url:
-        redirect_uri = "http://"+url_host+":5000/rp/google_callback"
+        redirect_uri = f"http://{url_host}:5000/rp/google_callback"
     else:
-        redirect_uri = "https://"+url_host+"/rp/google_callback"
+        redirect_uri = f"https://{url_host}/rp/google_callback"
     google = OAuth2Session(
         google_client_id, scope=scope, redirect_uri=redirect_uri)
     token_url = "https://www.googleapis.com/oauth2/v4/token"
@@ -75,14 +75,13 @@ def rp_google_callback():
     name = response["name"]
     image = response["picture"]
     getAdmin = Admin.query.filter_by(email=email).first()
-    if getAdmin == None:
+    if getAdmin is None:
         getAdmin = Admin(id=secrets.token_urlsafe(24), email=email,google_id=googleId, name=name,profile_image=image, created_date=datetime.now())
         db.session.add(getAdmin)
-        db.session.commit()
     else:
         getAdmin.google_id = googleId
         getAdmin.profile_image = image
-        db.session.commit()
+    db.session.commit()
     login_user(getAdmin, remember=True)
     return redirect("http://localhost:3000/")
 
@@ -95,7 +94,7 @@ class CAMELAgent:
         store
     ) -> None:
         self.model = model
-        if store == None:
+        if store is None:
             self.system_message = system_message
             self.init_messages()
             # print("NEW")
@@ -250,9 +249,6 @@ def start_rp():
         assistant_msg = HumanMessage(
             content=(f"{assistant_store[-1].content}"))
 
-    # chat_turn_limit, n = 10, 0
-    # while n < chat_turn_limit:
-        # n += 1
     user_ai_msg = user_agent.step(assistant_msg)
     user_msg = HumanMessage(content=user_ai_msg.content)
     userMsg = user_msg.content.replace("Instruction: ","").replace("Input: None","").replace("Input: None.","")
@@ -260,10 +256,7 @@ def start_rp():
     assistant_ai_msg = assistant_agent.step(user_msg)
     assistant_msg = HumanMessage(content=assistant_ai_msg.content)
     assistantMsg = assistant_msg.content.replace("Solution: ","").replace("Next request.","")
-    # print(f"AI Assistant ({assistant_role_name}):\n\n{assistant_msg.content}\n\n")
-    convoEnd = False
-    if "<CAMEL_TASK_DONE>" in user_msg.content:
-        convoEnd = True
+    convoEnd = "<CAMEL_TASK_DONE>" in user_msg.content
     getUserStore = user_agent.store_messages()
     getSession.user_store = codecs.encode(pickle.dumps(getUserStore), "base64").decode()
     getAssistantStore = assistant_agent.store_messages()
